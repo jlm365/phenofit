@@ -21,7 +21,6 @@
 #' @param tout corresponding \code{t} of curve fitting result
 #' @param optimFun optimization function, can be \code{I_optim} or \code{I_optimx}.
 #' @param method String, optimization method, passed to `optimFun`.
-#' @param w0 original weighted, is just used for visualization.
 #' @param debug boolean
 #' @param ... other parameters passed to \code{optimFUN}
 #' 
@@ -29,7 +28,7 @@
 #' @import optimx
 #' @export
 optim_pheno <- function(prior, FUN_name, y, t, tout, optimFUN = I_optim, method,
-    w, w0, ylu, iters = 2, wFUN = wTSM, nptperyear = 46, debug = FALSE, ...)
+    w, ylu, iters = 2, wFUN = wTSM, nptperyear = 46, debug = FALSE, ...)
 {
     FUN <- get(FUN_name, mode = "function" )
     # add prior colnames
@@ -100,7 +99,7 @@ optim_pheno <- function(prior, FUN_name, y, t, tout, optimFUN = I_optim, method,
                 # fixed 04 March, 2018; 
                 w <- tryCatch(
                     # to adapt wTS, set iter = i-1; #20180910
-                    wFUN(y, FUN(par, t), w, i+1, nptperyear, ...), 
+                    wFUN(y, FUN(par, t), w, i, nptperyear, ...), 
                     #nptperyear, wfact = 0.5)
                     error = function(e) {
                         message(sprintf('[%s]: %s', FUN_name, e$message))

@@ -27,7 +27,7 @@
 #' e.g. in the start or end of growing season.
 #' @param alpha Double value in [0,1], quantile prob of ylu_min.
 #' @param ... Others will be ignored.
-#' 
+#'
 #' @return A list object returned
 #' \itemize{
 #' \item{y} Numeric vector
@@ -47,12 +47,13 @@
 #' @seealso \code{\link[phenofit]{backval}}
 #'
 #' @export
-check_input <- function(t, y, w, nptperyear, Tn = NULL, 
-    wmin = 0.2, missval, maxgap = 10, alpha = 0.01, ...)
-{    
+check_input <- function(t, y, w, nptperyear, south = FALSE, Tn = NULL,
+    wmin = 0.2, missval, maxgap, alpha = 0.01, ...)
+{
     if (missing(nptperyear)){
         nptperyear <- ceiling(365/as.numeric(difftime(t[2], t[1], units = "days")))
     }
+    if (missing(maxgap)) maxgap = ceiling(nptperyear/12*1.5)
 
     n   <- length(y)
     if (missing(w) || is.null(w)) w <- rep(1, n)
@@ -68,12 +69,12 @@ check_input <- function(t, y, w, nptperyear, Tn = NULL,
         # more weights to marginal data.
         w_critical <- 0.5
     }
-    y_good <- y[w >= w_critical & !is.na(y)]
+    y_good <- y[w >= w_critical] %>% rm_empty()
     ylu    <- c(pmax( quantile(y_good, alpha/2), 0),
-               quantile(y_good, 1 - alpha/2)) 
-    # When check_fit, ylu_max is not used. ylu_max is only used for dividing 
+               quantile(y_good, 1 - alpha/2))
+    # When check_fit, ylu_max is not used. ylu_max is only used for dividing
     # growing seasons.
-    
+
     # adjust weights according to ylu
     # if (trim){
     #     I_trim    <- y < ylu[1] #| y > ylu[2]
@@ -86,9 +87,10 @@ check_input <- function(t, y, w, nptperyear, Tn = NULL,
     # generally, w == 0 mainly occur in winter. So it's seasonable to be assigned as minval
     ## 20180717 error fixed: y[w <= wmin]  <- missval # na is much appropriate, na.approx will replace it.
     # values out of range are setted to wmin weight.
-    
-    w[y < ylu[1] | y > ylu[2]] <- wmin
-    # based on out test marginal extreme value also often occur in winter
+
+    w[y < ylu[1] | y > max(y_good)] <- wmin # | y > ylu[2], 
+    # #based on out test marginal extreme value also often occur in winter
+    # #This step is really dangerous! (checked at US-Me2)
     y[y < ylu[1]]                  <- missval
     y[y > ylu[2] & w < w_critical] <- missval
 
@@ -111,15 +113,15 @@ check_input <- function(t, y, w, nptperyear, Tn = NULL,
     if (!is_empty(Tn)){
         Tn <- na.approx(Tn, maxgap = maxgap, na.rm = FALSE)
     }
-    list(t = t, y = y, w = w, Tn = Tn, ylu = ylu, nptperyear = nptperyear)#quickly return
+    list(t = t, y = y, w = w, Tn = Tn, ylu = ylu, nptperyear = nptperyear, south = south)#quickly return
 }
 
 #' check_fit
-#' 
+#'
 #' Curve fitting values are constrained in the range of \code{ylu}.
-#' Only constrain trough value for a stable background value. But not for peak 
+#' Only constrain trough value for a stable background value. But not for peak
 #' value.
-#' 
+#'
 #' @param yfit Numeric vector, curve fitting result
 #' @param ylu limits of y value, [ymin, ymax]
 #' @export

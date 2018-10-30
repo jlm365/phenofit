@@ -4,25 +4,33 @@ suppressMessages({
     library(plyr)
     library(data.table)
     library(tidyverse)
+    library(broom)
 
     library(magrittr)
     library(lubridate)
     library(purrr)
     library(zoo)
 
-    library(Ipaper)
-    library(phenofit)
-    # library(plotly)
     library(devtools)
-    library(Cairo)
     library(jsonlite)
     library(openxlsx)
     # library(pbmcapply)
-    library(MASS)
-    library(broom)
+    # library(MASS)
+
+    ## visualization pkgs
+    library(grid)
+    library(gridExtra)
+    library(Cairo)
+    # library(plotly)
+
+    ## self pkgs
+    library(Ipaper)
+    library(phenofit)
 })
 
 fontsize  <- 14
+
+subl <- function() system('subl .')
 
 qc_values <- c("0", "1", "2", "3")
 qc_levels <- c("good", "margin", "snow/ice", "cloud")
@@ -58,6 +66,57 @@ IGBPnames_005 <- c("water", "ENF", "EBF", "DNF", "DBF", "MF" , "CSH",
                    "OSH", "WSA", "SAV", "GRA", "WET", "CRO",
                    "URB", "CNV", "SNO", "BSV", "UNC")
 
+
+metric_spring <- c('TRS1.sos', 'TRS2.sos', 'TRS5.sos', 'TRS6.sos', 'DER.sos',
+                   'GU.UD', 'GU.SD', 'ZHANG.Greenup', 'ZHANG.Maturity')
+metric_autumn <- c('DER.eos', 'TRS6.eos', 'TRS5.eos', 'TRS2.eos', 'TRS1.eos',
+                   'GU.DD', 'GU.RD', 'ZHANG.Senescence', 'ZHANG.Dormancy')
+metrics <- c(metric_spring, "DER.pop", metric_autumn)
+#' phase: 'spring', 'pop', 'autumn'
+metric_phase <- function(metric){
+    phase <- rep("pop", length(metric))
+    phase[metric %in% metric_spring] <- "spring"
+    phase[metric %in% metric_autumn] <- "autumn"
+    phase %>% factor(c("spring", "pop", "autumn"))
+}
+
+#' nth_max
+#'
+#' The nth maximum value
+#' @examples
+#' x <- c(12.45,34,4,0,-234,45.6,4)
+#' nth_max(x)
+nth_max <- function(x, n = 2){
+    len <- length(x)
+
+    if (sum(!is.na(x)) <= n){
+        min(x, na.rm = T)
+    } else {
+        sort(x, decreasing = T)[n]
+    }
+    # i   <- len-n+1
+    # sort(x, partial=i, na.last=T)[i]
+}
+
+fix_null <- function(x, default = NA){
+    I <- sapply(x, is.null)
+    x[I] <- default
+    x
+}
+
+clamp_min <- function(x, value = 0){
+    x[x < value] <- value
+    x
+}
+
+#' clamp
+#' clamp values in the range of `lims`
+clamp <- function(x, lims = c(0, 1)){
+    x[x < lims[1]] <- lims[1]
+    x[x > lims[2]] <- lims[2]
+    x
+}
+
 # save pdf just like `ggsave`
 write_fig <- function(p, file = "Rplot.pdf", width = 10, height = 5, show = T, res = 300){
     if (missing(p)) p <- last_plot()
@@ -68,11 +127,13 @@ write_fig <- function(p, file = "Rplot.pdf", width = 10, height = 5, show = T, r
         FUN <- base::print
     }
 
-    file_ext <- str_extract(basename(file), "(?<=\\.).*$")
+    file_ext <- str_extract(basename(file), "(?<=\\.).{1,4}$")
 
     param <- list(file, width = width, height = height)
     if (file_ext == "pdf"){
         devicefun <- cairo_pdf # Cairo::CairoPDF #
+    } else if (file_ext == "svg"){
+        devicefun <- svg
     } else {
         if (file_ext %in% c("tif", "tiff")){
             devicefun <- tiff
@@ -119,12 +180,11 @@ ddply_dt <- function(d, j, by){
 #' Rg   : normalized
 #' Rg_0 : no normalized
 GOF_extra <- function(Y_obs, Y_pred){
-    # the autocorrelation of residuals
-    acf = acf(Y_pred - Y_obs, lag.max = 10, plot = F, na.action = na.pass)$acf[,,1][-1]
+   
     # roughness
     Roughness <- function(Y_pred){
         temp = diff(Y_pred)^2 %>% .[!is.na(.)]
-        if (is_empty(temp)) return(NA_real_) 
+        if (is_empty(temp)) return(NA_real_)
         Rg = sqrt(sum(temp)/length(temp))
         Rg
     }
@@ -148,22 +208,35 @@ GOF_extra <- function(Y_obs, Y_pred){
         Rg_norm_by_pred <- NA_real_
         Rg_norm_by_obs  <- NA_real_
         cv              <- NA_real_
+        ACF <- NULL
     } else {
         # for different methods, using the same `min` and `max` value
         Y_norm_by_pred  <- znorm(Y_pred, Y_pred)
         Y_norm_by_obs   <- znorm(Y_pred, Y_obs)
-        
+
         Rg              <- Roughness(Y_pred)
-        Rg_norm_by_pred <- Roughness(Y_norm_by_pred)        
+        Rg_norm_by_pred <- Roughness(Y_norm_by_pred)
         Rg_norm_by_obs  <- Roughness(Y_norm_by_obs)
         cv <- cv_coef(Y_pred)[['cv']]
+
+        # the autocorrelation of residuals
+        ACF = acf(Y_pred - Y_obs, lag.max = 10, plot = F, na.action = na.pass)$acf[,,1][-1]
     }
 
-    c(Rg = Rg, 
-        Rg_norm_by_obs  = Rg_norm_by_obs, 
-        Rg_norm_by_pred = Rg_norm_by_pred, cv = cv, acf = list(acf)) #GOF(Y_obs, Y_pred),
+    c(Rg = Rg,
+        Rg_norm_by_obs  = Rg_norm_by_obs,
+        Rg_norm_by_pred = Rg_norm_by_pred, 
+        cv = cv, 
+        acf = list(list(ACF))) #GOF(Y_obs, Y_pred),
 }
 
+GOF_extra2 <- function(Y_obs, Y_pred){
+    gof_1 <- GOF(Y_obs, Y_pred)
+    gof_2 <- GOF_extra(Y_obs, Y_pred)
+
+    res <- c(gof_1, gof_2)
+    res
+}
 
 # function to separate data to steps of x, obtain 95 quantile value for smooth
 upper_envelope <- function(x, y, step = 0.2, alpha = 0.95){
@@ -190,21 +263,116 @@ upper_envelope <- function(x, y, step = 0.2, alpha = 0.95){
 
 siteorder <- function(sites){ factor(sites) %>% as.numeric() }
 
-get_phenofit <- function(sitename, df, st, prefix_fig = 'phenofit_v3', IsPlot = F){
-    d     <- df[site == sitename, ] # get the first site data
-    sp    <- st[site == sitename, ] # station point
+# Get statistics information of phenofit
+getPheno_phenofit <- function(fit, INPUT, brks, d, file_pdf, titlestr){
+    ## check the curve fitting parameters
+    params <- getparam(fit)
+    # print(str(params, 1))
+    # print(params$AG)
+
+    ## Get GOF information
+    stat  <- ldply(fit$fits, function(fits_meth){
+        ldply(fits_meth, statistic.phenofit, .id = "flag")
+    }, .id = "meth")
+    fit$stat <- stat
+    # print(head(stat))
+
+    # pheno: list(p_date, p_doy)
+    p <- lapply(fit$fits, ExtractPheno)
+    pheno  <- map(p, tidyFitPheno, origin = INPUT$t[1]) %>% purrr::transpose()
+    fit$pheno  <- pheno
+
+    fit$INPUT   <- INPUT
+    fit$seasons <- brks
+
+    if (IsPlot){
+        # svg("Figure1_phenofit_curve_fitting.svg", 11, 7)
+        Cairo::CairoPDF(file_pdf, 11, 6) #
+        # grid::grid.newpage()
+        plot_phenofit(fit, d, titlestr) %>% grid::grid.draw()# plot to check the curve fitting
+        dev.off()
+    }
+    return(fit)
+}
+
+#' Get GPPobs phenology dat
+#' @examples
+#' get_phenofit(df, st, brks_lst, sites, wFUN = 'wTSM')
+get_phenofit_GPPobs <- function(sitename,
+    df, st, brks_lst, sites, wFUN = 'wTSM',
+    prefix_fig = 'phenofit_0.1.6', IsPlot = T)
+{
+    # sitename <- sites[i]
+    i <- grep(sitename, sites)
+    brks2 <- brks_lst[[i]]
+
+    ## 1. prepare inputs
+    d   <- df[site == sitename, .(t = date, GPP_DT, GPP_NT, w = 1)] #%T>% plotdata(365)
+    d$y <- rowMeans(d[, .(GPP_DT, GPP_NT)], na.rm = T)
+    d[y < 0, y := 0] # for GPP_NT
+
+    sp       <- st[site == sitename, ]
     titlestr <- with(sp, sprintf('[%03d,%s] %s, lat = %5.2f, lon = %6.2f',
                                      ID, site, IGBPname, lat, lon))
     file_pdf <- sprintf('Figure/%s_[%03d]_%s.pdf', prefix_fig, sp$ID[1], sp$site[1])
 
+    # parameters for season_3y
+    INPUT <- getINPUT_GPPobs(df, st, sitename)
+
+    ## 3. Get daily curve fitting result
+    wFUN <- get(wFUN)
+    fit  <- curvefits(INPUT, brks2,
+                      methods = c("AG", "zhang", "beck", "elmore"), #,"klos",, 'Gu'
+                      debug = F,
+                      wFUN = wFUN,
+                      nextent = 5, maxExtendMonth = 2, minExtendMonth = 1/3,
+                      # qc = as.numeric(dnew$SummaryQA),
+                      minPercValid = 0.2,
+                      print = FALSE)
+
+    fit <- getPheno_phenofit(fit, INPUT, brks2, d, file_pdf, titlestr)
+
+    return(fit)
+}
+
+#' get_phenofit
+#'
+#' @param nextent Suggest as ceiling(nptperyear/12*1.5). Daily GPPObs, 5; 16-day
+#' VI, 2.
+#' @param isVarLambda If `isVarLambda` = true, lambda will be automatically assigned
+#' with `init_lambda` in different years.
+get_phenofit <- function(sitename, df, st, prefix_fig = 'phenofit_v0.1.6', IsPlot = F,
+    nptperyear = 23,
+    brks = NULL,
+    ypeak_min = 0.05,
+    wFUN_season = wTSM, wFUN_fit = wFUN_season,
+    lambda = NULL, isVarLambda = FALSE,
+    nextent = 5, maxExtendMonth = 3, minExtendMonth = 1)
+{
+    d     <- df[site == sitename, ] # get the first site data
+    sp    <- st[site == sitename, ] # station point
+    south <- sp$lat < 0
+    if (length(south) == 0) south <- F
+
+    lat <- lon <- NA; IGBPname <- ""
+    titlestr <- with(sp, sprintf('[%03d,%s] %s, lat = %.2f, lon = %.2f',
+                                     ID, site, IGBPname, lat, lon))
+    file_pdf <- sprintf('Figure/%s_[%03d]_%s.pdf', prefix_fig, sp$ID[1], sp$site[1])
+
     tryCatch({
-        dnew  <- add_HeadTail(d)
+        dnew  <- add_HeadTail(d, south, nptperyear)
         # 1. Check input data and initial parameters for phenofit
-        INPUT <- check_input(dnew$t, dnew$y, dnew$w, maxgap = nptperyear/4, alpha = 0.02, wmin = 0.2)
-        INPUT$y0 <- dnew$y
+        INPUT <- check_input(dnew$t, dnew$y, dnew$w, nptperyear,
+            maxgap = nptperyear/4, alpha = 0.02, wmin = 0.2)
+        INPUT$y0    <- dnew$y
+        INPUT$south <- south
+
         IsPlot2   <- FALSE # for brks
         # 2. The detailed information of those parameters can be seen in `season`.
-        lambda <- init_lambda(INPUT$y)#*2
+        # If lambda initialized at here, yearly variation will be not include.
+        if (is.null(lambda)) lambda <- init_lambda(INPUT$y)#*2
+        if (isVarLambda) lambda <- NULL
+
         # brks   <- season(INPUT, nptperyear,
         #                FUN = whitsmw2, wFUN = wFUN, iters = 2,
         #                lambda = lambda,
@@ -212,53 +380,34 @@ get_phenofit <- function(sitename, df, st, prefix_fig = 'phenofit_v3', IsPlot = 
         #                south = d$lat[1] < 0,
         #                rymin_less = 0.6, ymax_min = ymax_min,
         #                max_MaxPeaksperyear =2.5, max_MinPeaksperyear = 3.5) #, ...
-        # get growing season breaks in a 3-year moving window
-        brks2 <- season_3y(INPUT, nptperyear, south = sp$lat[1] < 0, FUN = whitsmw2,
-                           IsPlot = IsPlot2, print = print, partial = F)
+        ## get growing season breaks in a 3-year moving window
+        brks2 <- season_3y(INPUT, south = south,
+            wFUN = wFUN_season, rFUN = wWHIT, iters = 2,
+            lambda = lambda,
+            minpeakdistance = nptperyear/6,
+            MaxPeaksPerYear = 3,
+            MaxTroughsPerYear = 4,
+            ypeak_min = ypeak_min,
+            IsPlot = F, print = FALSE, IsOnlyPlotbad = F)
+        if (!is.null(brks)) brks2$dt <- brks$dt
 
         # 3. curve fitting
-        fit  <- curvefits(INPUT, brks2, lambda =lambda,
+        fit  <- curvefits(INPUT, brks2,
                           methods = c("AG", "zhang", "beck", "elmore"), #,"klos",, 'Gu'
-                          nptperyear = nptperyear, debug = F, wFUN = wTSM,
-                          nextent = 2, maxExtendMonth = 3, minExtendMonth = 1,
-                          qc = as.numeric(dnew$SummaryQA), minPercValid = 0.2,
-                          print = print)
-        fit$INPUT   <- INPUT
-        fit$seasons <- brks2
+                          debug = F,
+                          wFUN = wFUN_fit,
+                          nextent = nextent, maxExtendMonth = maxExtendMonth, minExtendMonth = minExtendMonth,
+                          qc = as.numeric(dnew$QC_flag),
+                          minPercValid = 0.2,
+                          print = FALSE)
 
-        if (IsPlot){
-            # svg("Figure1_phenofit_curve_fitting.svg", 11, 7)
-            Cairo::CairoPDF(file_pdf, 11, 6) #
-            # grid::grid.newpage()
-            plot_phenofit(fit, d, titlestr) %>% grid::grid.draw()# plot to check the curve fitting
-            dev.off()
-        }
-
-        # temp <- ExtractPheno(fit$fits$ELMORE[1:5], IsPlot = T) # check extracted phenology
-        ## 3.2 Get GOF information
-        stat  <- ldply(fit$fits, function(fits_meth){
-            ldply(fits_meth, statistic.phenofit, .id = "flag")
-        }, .id = "meth")
-        fit$stat <- stat
-
-        # 4. extract phenology, check extracted phenology extraction for one method.
-        # ratio = 1.15
-        # file <- "Figure5_Phenology_Extraction_temp.pdf"
-        # cairo_pdf(file, 8*ratio, 6*ratio)
-        # temp <- ExtractPheno(fit$fits$ELMORE[2:6], IsPlot = T)
-        # dev.off()
-        # file.show(file)
-
-        # pheno: list(p_date, p_doy)
-        p <- lapply(fit$fits, ExtractPheno)
-        pheno  <- map(p, tidyFitPheno, origin = INPUT$t[1]) %>% purrr::transpose()
-
-        fit$pheno  <- pheno
+        fit <- getPheno_phenofit(fit, INPUT, brks2, d, file_pdf, titlestr)
         return(fit)
     }, error = function(e){
         message(sprintf('[e]: %s, %s', titlestr, e$message))
     })
 }
+
 
 # rename phenofit phenology metrics names
 fix_level <- function(x){

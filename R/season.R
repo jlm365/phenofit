@@ -4,7 +4,7 @@
 #' findpeak function to get the local maximum and local minimum values.
 #' Two local minimum defined a growing season. If two local minimum(maximum)
 #' are too closed, then only the smaller(biger) is left.
-#' 
+#'
 #' Then according to season pos, based to local maximum position divide yearly
 #' growing season. lambda need to set carefully.
 #'
@@ -24,9 +24,9 @@
 #' considered above the zero frequency
 #' @param frame the parameter of \code{sgfitw}, moving window size. Suggested by
 #' TIMESAT, default frame = floor(nptperyear/7)*2 + 1.
-#' @param minpeakdistance In the unit of points. The minimum distance 
-#' (in indices) peaks have to have to be counted. If the distance of two 
-#' maximum extreme value less than `minpeakdistance`, only the real maximum 
+#' @param minpeakdistance In the unit of points. The minimum distance
+#' (in indices) peaks have to have to be counted. If the distance of two
+#' maximum extreme value less than `minpeakdistance`, only the real maximum
 #' value will be left.
 #' @param threshold_min Threshold is defined as the difference of peak value with
 #' trough value. There are two threshold (left and right). The minimum threshold
@@ -44,6 +44,8 @@
 #' IsPlot=true, plotdata will be used to plot. Known that y and w in \code{INPUT}
 #' have been changed, we suggest using the original data.table.
 #' @param print Whether to print progress information
+#' @param adj.param Adjust rough curve fitting function parameters automatically, 
+#' if too many or to less peak and trough values.
 #' @param ... Other parameters passed to findpeaks
 #'
 #' @export
@@ -67,19 +69,21 @@
 #  1  25.0  48.0  76.0
 # if more than one continuous maximum(minimum) values, only kept the bigger
 # (smaller) one
-season <- function(INPUT, south = FALSE,
+season <- function(INPUT,
                    rFUN = wWHIT, wFUN = wTSM, iters = 2, wmin = 0.1,
                    lambda, nf  = 3, frame = floor(INPUT$nptperyear/5)*2 + 1,
                    minpeakdistance,
                    threshold_max = 0.2, threshold_min = 0.05,
                    ypeak_min   = 0.1, rytrough_max = 0.6,
                    MaxPeaksPerYear = 2, MaxTroughsPerYear = 3,
-                   IsPlot  = FALSE, plotdat = INPUT, print = FALSE,
+                   IsPlot  = FALSE, plotdat = INPUT, print = FALSE, 
+                   adj.param = TRUE,
                    ...)
 {
     t   <- INPUT$t
     y   <- INPUT$y
     nptperyear <- INPUT$nptperyear
+    south      <- INPUT$south
 
     if (missing(frame)) frame <- floor(nptperyear/5) * 2 + 1
     if (missing(minpeakdistance)) minpeakdistance <- nptperyear/6
@@ -167,26 +171,31 @@ season <- function(INPUT, south = FALSE,
 
         ## This module will automatically update lambda, nf and wHANTS
         #  Not only wWHd, it has been extended to wHANT and wSG. 20180910
-        delta_frame <- ceiling(nptperyear/12) # adjust frame in the step of `month`
-        if (npeak_PerYear > MaxPeaksPerYear | ntrough_PerYear > MaxTroughsPerYear){
-            lambda <- lambda*2
-            nf     <- max(1, nf - 1)
-            frame  <- min(frame + delta_frame, nptperyear*2)
-        }else if (npeak_PerYear < 0.8  | ntrough_PerYear < 0.8){
-            lambda <- lambda/2
-            nf     <- min(5, nf + 1)
-            frame  <- max(frame - delta_frame, delta_frame)
-        }else{
+        
+        if (adj.param){
+            delta_frame <- ceiling(nptperyear/12) # adjust frame in the step of `month`
+            if (npeak_PerYear > MaxPeaksPerYear | ntrough_PerYear > MaxTroughsPerYear){
+                lambda <- lambda*2
+                nf     <- max(1, nf - 1)
+                frame  <- min(frame + delta_frame, nptperyear*2)
+            }else if (npeak_PerYear < 0.8  | ntrough_PerYear < 0.8){
+                lambda <- lambda/2
+                nf     <- min(5, nf + 1)
+                frame  <- max(frame - delta_frame, delta_frame)
+            }else{
+                break
+            }
+            iloop <- iloop + 1
+        } else {
             break
         }
-        iloop <- iloop + 1
     }
 
     ## Prepare raw OUTPUT for error condition
     #  rough curve fitting time-series
     rfit = as.data.table(c(list(t = t, y = y), yfits$ws, yfits$zs))
-    
-    # 1.1 the local minimum value should small than rytrough_max*A 
+
+    # 1.1 the local minimum value should small than rytrough_max*A
     if (!is.null(pos_min)) {
         pos_min <- pos_min[(val - ylu[1]) <= rytrough_max*A, ]
         pos_min[, type := -1]
@@ -198,7 +207,7 @@ season <- function(INPUT, south = FALSE,
 
     dt  <- di <- NULL
     res <- list(whit = rfit, pos = pos, dt = dt, di = di)
-    
+
     if (is.null(pos_max) || is.null(pos_min)){
         warning("Can't find a complete growing season before trim!")
         return(res)
@@ -208,6 +217,9 @@ season <- function(INPUT, south = FALSE,
     # rm peak value if peak value smaller than the nearest trough values
     I   <- !with(pos, (c(diff(val) > 0, FALSE) & c(diff(type) == -2, FALSE)) |
             (c(FALSE, diff(val) < 0) & c(FALSE, diff(type) == 2)))
+    # whether remove y_peak first is important
+    # I <- which(dt$y_peak >= ypeak_min)
+
     pos <- pos[I, ]
 
     # 1.2 remove both points (date or value of min and max too close)
@@ -232,7 +244,7 @@ season <- function(INPUT, south = FALSE,
 
     # print(nrow(pos))
     if (nrow(pos) < 2){ # at least two points, begin and end
-        warning("Can't find a complete growing season before!")    
+        warning("Can't find a complete growing season before!")
         return(res)
     }
 
@@ -288,7 +300,7 @@ season <- function(INPUT, south = FALSE,
     res$dt <- dt
     ## 7. plot
     if (IsPlot) plot_season(INPUT, res, plotdat, INPUT$ylu)
-    
+
     return(res)
 }
 

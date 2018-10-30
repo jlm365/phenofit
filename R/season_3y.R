@@ -9,20 +9,25 @@
 #' @param IsOnlyPlotbad If true, only plot partial figures whose NSE < 0.3
 #' @param ... For 'season_3y', Other parameters passed to `season`;
 #' For `season`, other parameters passed to findpeaks.
-#'
+#' @param IsPlot.vc Whether to plot V-curve optimized time-series.
+#' 
 #' @rdname season
 #' @return List object, list(whit, dt, stat)
 #' @export
-season_3y <- function(INPUT, south = FALSE,
+season_3y <- function(INPUT,
     rFUN = wWHIT, wFUN = wTSM, iters = 2, wmin = 0.1,
+    Ioptim_lambda = FALSE,
     lambda = NULL, nf  = 3, frame = floor(INPUT$nptperyear/5)*2 + 1,
-    maxExtendMonth = 3,
+    maxExtendMonth = 12,
     ...,
-    IsPlot = T, plotdat = INPUT, print = TRUE, titlestr = "",
+    IsPlot = T, IsPlot.vc = FALSE, 
+    plotdat = INPUT, print = TRUE, titlestr = "",
     IsOnlyPlotbad = TRUE)
 {
     nptperyear <- INPUT$nptperyear
-    t <- INPUT$t
+    south      <- INPUT$south
+    t          <- INPUT$t
+
     nlen      <- length(t)
     date_year <- year(t) + ((month(t) >= 7)-1)*south
 
@@ -42,15 +47,17 @@ season_3y <- function(INPUT, south = FALSE,
     debug <- FALSE
     # debug <- TRUE
     # i = 1;
-    params <- list(south = south,
+    params <- list(
             rFUN = rFUN, wFUN = wFUN, iters = iters, wmin = wmin,
             nf  = nf, frame = frame,
             IsPlot = debug, plotdat = plotdat, ...)#
 
     has_lambda = !is.null(lambda)
     brks  <- list()
+    vcs   <- vector("list", nyear-2) %>% set_names(years[2:(nyear-1)])
 
     nextent  <- ceiling(maxExtendMonth/12*nptperyear)
+    width_ylu    = nptperyear*2 # This is quite important, to make time-series continuous.
     # If data is not continuous, `season_3y` will be error!
     # Fixed at 20180915
     for (i in 2:(nyear-1)){
@@ -59,14 +66,15 @@ season_3y <- function(INPUT, south = FALSE,
         year_i <- years[i]
         # I <- which(date_year %in% years[(i-ny_extend):(i+ny_extend)]) # 3y index
         I   <- which(date_year %in% years[i]) # 3y index
-        ylu <- get_ylu (INPUT$y, date_year, INPUT$w, width = nextent, I, Imedian = TRUE, wmin)
+        # `nextent` is not enough
+        ylu <- get_ylu (INPUT$y, date_year, INPUT$w, width = width_ylu, I, Imedian = TRUE, wmin)
         ylu <- merge_ylu(INPUT$ylu, ylu) # curvefits.R
-        
+
         # extend curve fitting period, for continuity.
         I <- seq( max(1, first(I) - nextent), min(last(I) + nextent, nlen) )
 
         # # triplicate HANTS test, 2018-09-19
-        # # Not perfect at all for regions with multiple growing season. 
+        # # Not perfect at all for regions with multiple growing season.
         # # No one method can cope with all the situation.
         # {
         #     nextent <- length(I)
@@ -81,27 +89,45 @@ season_3y <- function(INPUT, south = FALSE,
         #     input$y          <- yi
         # }
 
-        input  <- lapply(INPUT[1:3], `[`, I)
-        input$ylu        <- ylu
-        input$nptperyear <- nptperyear
+        input <- lapply(INPUT[1:3], `[`, I)
+        input <- c(input, list(ylu = ylu, nptperyear=nptperyear, south=south))
 
-        if (!has_lambda) lambda <- init_lambda(input$y)#*2
+        if (!has_lambda) {
+            if (Ioptim_lambda){
+                y <- input$y %>% rm_empty() # should be NA values now
 
+                # update 20181029, add v_curve lambda optimiazaiton in season_3y
+                vc <- v_curve(input, lambdas = seq(-1, 2, by = 0.005), d = 2,
+                                  wFUN = wFUN, iters = iters,
+                        IsPlot = IsPlot.vc)
+               
+                lambda <- vc$lambda
+                vcs[[i-1]] <- vc
+            } else {
+                lambda <- init_lambda(input$y) #*2
+            }
+        }
+
+# browser()
         params_i = c(list(INPUT = input, lambda = lambda), params)
         brk    <- do.call(season, params_i)
 
         if (!is.null(brk$dt)){
             brk$dt %<>% subset(year == year_i)
+            brk$dt$lambda <- lambda
         }
 
         if (is.null(brk$dt) || nrow(brk$dt) == 0){
-            params_i$threshold_max = 0.2
+            # if have no brks, try to decrease threshold_max
+            params_i$threshold_max <- max(params_i$threshold_max-0.1, 0.05)
             brk <- do.call(season, params_i)
             # we need `rfit` time-series, so can't skip NULL brks.
             if (!is.null(brk$dt)){
                 brk$dt %<>% subset(year == year_i)
+                brk$dt$lambda <- lambda
             }
         }
+
         brks[[i-1]] <- list(whit = brk$whit[date_year[I] == year_i, ],
                           dt   = brk$dt)
     }
@@ -123,6 +149,7 @@ season_3y <- function(INPUT, south = FALSE,
     ## VISUALIZATION
     if (IsPlot) plot_season(INPUT, brks, plotdat, ylu = INPUT$ylu, IsOnlyPlotbad)
 
+    if (Ioptim_lambda) brks$optim <- vcs
     return(brks)
 }
 
@@ -148,7 +175,7 @@ stat_season <- function(INPUT, brks){
 #' @export
 plot_season <- function(INPUT, brks, plotdat, ylu, IsOnlyPlotbad = FALSE){
     stat <- stat_season(INPUT, brks)
-    stat_txt  <- stat[c("R2", "NSE", "cv")] %>%
+    stat_txt  <- stat[c("R2", "NSE", "sim.cv", "obs.cv")] %>%
         {paste(names(.), round(., 3), sep = "=", collapse = ", ")}
 
     # if (NSE < 0 | (cv < 0.1 & NSE < 0.1)) {}

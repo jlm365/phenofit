@@ -8,7 +8,8 @@
 #' A data.table with a new column \code{t}, which is the exact compositing date.
 #' @export
 getRealDate <- function(df){
-    df[, `:=`(date = ymd(date), year = year(date), doy = as.integer(yday(date)))]
+    df[, `:=`(date = ymd(date))]
+    df[, `:=`(year = year(date), doy = as.integer(yday(date)))]
     df[is.na(DayOfYear), DayOfYear := doy] # If DayOfYear is missing
 
     # In case of last scene of a year, doy of last scene could in the next year
@@ -53,14 +54,11 @@ tidy_MOD13.gee <- function(infile, outfile, wmin = 0.2){
     df %<>% getRealDate()
 
     # Initial weights
-    df[, w := qc_summary(SummaryQA, wmin = 0.2)]
+    df[, c("w", "QC_flag") := qc_summary(SummaryQA, wmin = 0.2)]
     # Remap SummaryQA factor level, plot_phenofit use this variable. For other
     # remote sensing data without `SummaryQA`, need to modify `plot_phenofit`
-    if ('SummaryQA' %in% colnames(df)){
-        df$SummaryQA %<>% factor() %>% mapvalues(qc_values, qc_levels)
-    }
-
-    df <- df[, .(site, y = EVI/1e4, date, t, w, SummaryQA
+    
+    df <- df[, .(site, y = EVI/1e4, date, t, w, QC_flag
                  # IGBPcode,
                  # IGBPname = as.factor(IGBPnames[IGBPcode]),
                  )]

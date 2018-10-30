@@ -1,23 +1,29 @@
+# source('inst/shiny/check_season/global.R')
 library(phenofit)
 library(shiny)
-library(DT)
+# library(DT)
 library(data.table)
 library(magrittr)
 
-load("data/shiny_flux115.rda")
-sites <- sort(sites)
+load('data/phenoflux_115.rda')
+load('data/phenoflux_115_ET&GPP&VI.rda')
+# load('inst/shiny/check_season/data/phenoflux_115.rda')
+# load('inst/shiny/check_season/data/ET&GPP&VI_flux115.rda')
 
+# sites <- sort(sites)
 
 getSiteData  <- function(df, sitename){
     df[site == sitename, .(t = date, y = GPP_DT, w = 1)] #%T>% plotdata(365)
 }
 
-get_input <- function(df, st, sitename){
+getINPUT_GPPobs <- function(df, st, sitename){
     sp       <- st[site == sitename]
     south    <- sp$lat < 0
     titlestr <- with(sp, sprintf("[%3d] %s, %s, lat = %.2f", ID, site, IGBP, lat))
 
-    d  <- df[site == sitename, .(t = date, y = GPP_DT, w = 1)] #%T>% plotdata(365)
+    d   <- df[site == sitename, .(t = date, GPP_DT, GPP_NT, w = 1)] #%T>% plotdata(365)
+    d$y <- rowMeans(d[, .(GPP_DT, GPP_NT)], na.rm = T)
+    d[y < 0, y := 0] # for GPP_NT
     # d_obs[site == sitename, .(t = date, y = GPP_DT, w = 1)] %>% plotdata(365)
     d_new <- add_HeadTail(d, south = south)
     INPUT <- do.call(check_input, d_new)
@@ -69,7 +75,7 @@ plot_data <- function(d, title){
 ## global parameters for check_season
 nptperyear <- 365
 setting    <- list(mar = c(2, 3, 1, 1), mgp = c(1.2, 0.6, 0))
-fig.height <- 265
+fig.height <- 225
 par(setting)
 
 param_step <- 0.1

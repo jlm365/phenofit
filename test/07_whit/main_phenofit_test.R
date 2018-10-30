@@ -43,6 +43,11 @@ agree_index <- function(Y_obs, Y_sim){
     d # agreement index
 }
 
+box_qtl <- function(x){
+    x <- stats::na.omit(x)
+    quantile(x, c(0.1, 0.9)) %>% set_names(c("ymin", "ymax"))
+}
+
 # boxplot for over all correlation and agreement index
 boxplot <- function(p, width = 0.95){
     # width  <- 0.95
@@ -459,6 +464,11 @@ getFittings2 <- function(fit){
     df_fit <- unique(df_fit) # remove duplicated value
 
     return(df_fit)
+}
+
+GOF_fineFitting <- function(fit){
+    d <- getFittings2(x)
+    d[, as.list(GOF_extra2(y, value)), .(iters, meth)]
 }
 
 # Get GOF info for every

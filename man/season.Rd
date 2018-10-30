@@ -7,18 +7,18 @@
 \alias{plot_season}
 \title{season}
 \usage{
-season(INPUT, south = FALSE, rFUN = wWHIT, wFUN = wTSM, iters = 2,
-  wmin = 0.1, lambda, nf = 3, frame = floor(INPUT$nptperyear/5) * 2 +
-  1, minpeakdistance, threshold_max = 0.2, threshold_min = 0.05,
+season(INPUT, rFUN = wWHIT, wFUN = wTSM, iters = 2, wmin = 0.1,
+  lambda, nf = 3, frame = floor(INPUT$nptperyear/5) * 2 + 1,
+  minpeakdistance, threshold_max = 0.2, threshold_min = 0.05,
   ypeak_min = 0.1, rytrough_max = 0.6, MaxPeaksPerYear = 2,
   MaxTroughsPerYear = 3, IsPlot = FALSE, plotdat = INPUT,
-  print = FALSE, ...)
+  print = FALSE, adj.param = TRUE, ...)
 
-season_3y(INPUT, south = FALSE, rFUN = wWHIT, wFUN = wTSM,
-  iters = 2, wmin = 0.1, lambda = NULL, nf = 3,
-  frame = floor(INPUT$nptperyear/5) * 2 + 1, maxExtendMonth = 3, ...,
-  IsPlot = T, plotdat = INPUT, print = TRUE, titlestr = "",
-  IsOnlyPlotbad = TRUE)
+season_3y(INPUT, rFUN = wWHIT, wFUN = wTSM, iters = 2, wmin = 0.1,
+  Ioptim_lambda = FALSE, lambda = NULL, nf = 3,
+  frame = floor(INPUT$nptperyear/5) * 2 + 1, maxExtendMonth = 12, ...,
+  IsPlot = T, IsPlot.vc = FALSE, plotdat = INPUT, print = TRUE,
+  titlestr = "", IsOnlyPlotbad = TRUE)
 
 stat_season(INPUT, brks)
 
@@ -27,9 +27,6 @@ plot_season(INPUT, brks, plotdat, ylu, IsOnlyPlotbad = FALSE)
 \arguments{
 \item{INPUT}{A list object with the elements of 't', 'y', 'w', 'Tn' (option)
 and 'ylu', returned by \code{check_input}.}
-
-\item{south}{Boolean. In south hemisphere, growing year is 1 July to the
-following year 31 June; In north hemisphere, growing year is 1 Jan to 31 Dec.}
 
 \item{rFUN}{Coarse curve fitting function, can be one of `wSG`, `wWHIT`
 and `wHANTS`.}
@@ -50,9 +47,9 @@ considered above the zero frequency}
 \item{frame}{the parameter of \code{sgfitw}, moving window size. Suggested by
 TIMESAT, default frame = floor(nptperyear/7)*2 + 1.}
 
-\item{minpeakdistance}{In the unit of points. The minimum distance 
-(in indices) peaks have to have to be counted. If the distance of two 
-maximum extreme value less than `minpeakdistance`, only the real maximum 
+\item{minpeakdistance}{In the unit of points. The minimum distance
+(in indices) peaks have to have to be counted. If the distance of two
+maximum extreme value less than `minpeakdistance`, only the real maximum
 value will be left.}
 
 \item{threshold_max}{Similar as `threshold_min`, The maximum threshold should
@@ -80,11 +77,19 @@ have been changed, we suggest using the original data.table.}
 
 \item{print}{Whether to print progress information}
 
+\item{adj.param}{Adjust rough curve fitting function parameters automatically, 
+if too many or to less peak and trough values.}
+
 \item{...}{Other parameters passed to findpeaks}
+
+\item{IsPlot.vc}{Whether to plot V-curve optimized time-series.}
 
 \item{titlestr}{string for title}
 
 \item{IsOnlyPlotbad}{If true, only plot partial figures whose NSE < 0.3}
+
+\item{south}{Boolean. In south hemisphere, growing year is 1 July to the
+following year 31 June; In north hemisphere, growing year is 1 Jan to 31 Dec.}
 
 \item{ny_extend}{Integer,including previous and subsequent `ny_extend` year
 to divding growing season.}
