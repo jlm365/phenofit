@@ -105,6 +105,11 @@ list.rbind <- function(x) do.call(rbind.data.frame, x) %>% set_rownames(names(x)
 #' 
 #' @param d data.frame or data.table
 #' @param days Integer number or vector, can't have duplicated value.
+#' 
+#' @examples
+#' date = seq.Date(as.Date("2010-01-01"), as.Date("2010-12-31"), by = "day")
+#' d <- data.frame(date)
+#' dnew <- add_dn(d, days = c(8, 16))
 #' @export
 add_dn <- function(d, days = 8){
     if (class(d$date) != 'Date')

@@ -18,7 +18,11 @@
 #         pred = xpred.out, par = NULL, fun = NULL), class = "phenofit")
 # }
 
-#' Fitting double logistics, asymmetric gaussian functions
+#' @name FitDL
+#' @title Fine curve fitting functions.
+#' 
+#' @description Fine curve fitting functions, e.g. double logistics, Asymmetric 
+#' Gaussian. They are used to fit vegetation time-series in every growing season.
 #'
 #' @param y input vegetation index time-series.
 #' @param t the corresponding doy(day of year) of y.
@@ -35,6 +39,8 @@
 #'      2006. Improved monitoring of vegetation dynamics at very high latitudes:
 #'      A new method using MODIS NDVI. Remote Sens. Environ.
 #'      https://doi.org/10.1016/j.rse.2005.10.021.
+NULL
+
 #' @rdname FitDL
 #' @export
 FitDL.Zhang <- function(y, t = index(y), tout = t, optimFUN = I_optimx,
